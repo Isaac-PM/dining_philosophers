@@ -1,6 +1,9 @@
 /*
 Based on the explanation of the "Dining philosophers problem"
 in this video by Troels Mortensen @ https://www.youtube.com/watch?v=w_Cug4_-7F0
+
+This version causes a deadlock. 
+Refer to the main branch for the solution to the problem.
 */
 
 #include <array>
