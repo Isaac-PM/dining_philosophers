@@ -1,9 +1,6 @@
 /*
 Based on the explanation of the "Dining philosophers problem"
 in this video by Troels Mortensen @ https://www.youtube.com/watch?v=w_Cug4_-7F0
-
-This version causes a deadlock. 
-Refer to the main branch for the solution to the problem.
 */
 
 #include <array>
@@ -23,12 +20,16 @@ public:
     {
     }
 
-    void pickUp()
+    bool pickUp(std::chrono::milliseconds timeout)
     {
         std::unique_lock<std::mutex> lock(m_mutex);
-        m_condition.wait(lock, [this]()
-                         { return !m_inUse; });
+        if (!m_condition.wait_for(lock, timeout, [this]()
+                                  { return !m_inUse; }))
+        {
+            return false; // Timeout occurred
+        }
         m_inUse = true;
+        return true;
     }
 
     void putDown()
@@ -64,6 +65,7 @@ public:
         std::uniform_int_distribution<int> dist(0, 1);
         std::uniform_int_distribution<int> eatTime(1, 100);
         std::uniform_int_distribution<int> thinkTime(1, 10);
+        std::chrono::milliseconds timeout(1000);
         while (true)
         {
             int action = dist(randEngine);
@@ -75,30 +77,49 @@ public:
                     std::cout << name << " wants to eat\n";
                 }
 
-                fork1.pickUp();
+                if (fork1.pickUp(timeout))
                 {
-                    std::lock_guard<std::mutex> lock(outputMutex);
-                    std::cout << name << " picked up fork " << fork1.id << "\n";
-                }
+                    {
+                        std::lock_guard<std::mutex> lock(outputMutex);
+                        std::cout << name << " picked up fork " << fork1.id << "\n";
+                    }
 
-                fork2.pickUp();
-                {
-                    std::lock_guard<std::mutex> lock(outputMutex);
-                    std::cout << name << " picked up fork " << fork2.id << "\n";
-                    std::cout << name << " is now eating\n";
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(eatTime(randEngine)));
+                    if (fork2.pickUp(timeout))
+                    {
+                        {
+                            std::lock_guard<std::mutex> lock(outputMutex);
+                            std::cout << name << " picked up fork " << fork2.id << "\n";
+                            std::cout << name << " is now eating\n";
+                        }
+                        std::this_thread::sleep_for(std::chrono::milliseconds(eatTime(randEngine)));
 
-                fork1.putDown();
-                {
-                    std::lock_guard<std::mutex> lock(outputMutex);
-                    std::cout << name << " put down fork " << fork1.id << "\n";
-                }
+                        fork1.putDown();
+                        {
+                            std::lock_guard<std::mutex> lock(outputMutex);
+                            std::cout << name << " put down fork " << fork1.id << "\n";
+                        }
 
-                fork2.putDown();
+                        fork2.putDown();
+                        {
+                            std::lock_guard<std::mutex> lock(outputMutex);
+                            std::cout << name << " put down fork " << fork2.id << "\n";
+                        }
+                    }
+                    else
+                    {
+                        fork1.putDown();
+                        {
+                            std::lock_guard<std::mutex> lock(outputMutex);
+                            std::cout << name << " could not pick up fork " << fork2.id << " and put down fork " << fork1.id << "\n";
+                        }
+                    }
+                }
+                else
                 {
-                    std::lock_guard<std::mutex> lock(outputMutex);
-                    std::cout << name << " put down fork " << fork2.id << "\n";
+                    {
+                        std::lock_guard<std::mutex> lock(outputMutex);
+                        std::cout << name << " could not pick up fork " << fork1.id << "\n";
+                    }
                 }
             }
             else
@@ -113,8 +134,8 @@ public:
     }
 
     std::string name;
-    Fork &fork1;
-    Fork &fork2;
+    Fork &fork1; // Left fork
+    Fork &fork2; // Right fork
     std::mt19937 randEngine;
     static std::mutex outputMutex;
 };
